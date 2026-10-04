@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Room Chat</title>
+    <style>
+        :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+        body { max-width: 720px; margin: 3rem auto; padding: 0 1rem; }
+        h1 { margin-bottom: .25rem; }
+        .muted { color: #777; }
+        form, .join-fields { display: flex; gap: .5rem; }
+        input, button { font: inherit; padding: .6rem .75rem; }
+        input { min-width: 0; }
+        #join-form input { flex: 1; }
+        #chat { display: none; }
+        #messages { height: 55vh; min-height: 240px; overflow-y: auto; border: 1px solid #8886; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+        .message { margin: .35rem 0; overflow-wrap: anywhere; }
+        .system { color: #777; font-style: italic; }
+        #message-input { flex: 1; }
+        @media (max-width: 520px) { .join-fields { flex-direction: column; } }
+    </style>
+</head>
+<body>
+    <h1>Room chat</h1>
+    <p class="muted">Open this page in another tab or browser and join the same room to chat.</p>
+
+    <form id="join-form">
+        <div class="join-fields">
+            <input id="username" maxlength="24" placeholder="Your name" autocomplete="nickname" required>
+            <input id="room" maxlength="40" placeholder="Room name" value="general" required>
+            <button type="submit">Join chat</button>
+        </div>
+    </form>
+
+    <section id="chat" aria-live="polite">
+        <p id="status" class="muted">Connecting…</p>
+        <div id="messages" aria-label="Chat messages"></div>
+        <form id="message-form">
+            <input id="message-input" maxlength="1000" placeholder="Write a message…" autocomplete="off" disabled required>
+            <button id="send-button" type="submit" disabled>Send</button>
+        </form>
+    </section>
+
+    <script>
+        const joinForm = document.getElementById('join-form');
+        const chat = document.getElementById('chat');
+        const status = document.getElementById('status');
+        const messages = document.getElementById('messages');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        let socket;
+
+        function addMessage(text, kind = 'message') {
+            const line = document.createElement('div');
+            line.className = kind;
+            // textContent keeps chat text from being interpreted as HTML.
+            line.textContent = text;
+            messages.appendChild(line);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        joinForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            if (socket && socket.readyState === WebSocket.OPEN) return;
+
+            const username = document.getElementById('username').value.trim();
+            const room = document.getElementById('room').value.trim();
+            if (!username || !room) return;
+
+            const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const url = `${scheme}//${window.location.host}/ws/${encodeURIComponent(room)}/${encodeURIComponent(username)}`;
+            socket = new WebSocket(url);
+            joinForm.hidden = true;
+            chat.style.display = 'block';
+            status.textContent = `Connecting to #${room}…`;
+
+            socket.addEventListener('open', () => {
+                status.textContent = `Connected to #${room} as ${username}`;
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                messageInput.focus();
+            });
+
+            socket.addEventListener('message', (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'system') {
+                    addMessage(data.text, 'message system');
+                } else if (data.type === 'message') {
+                    addMessage(`${data.username}: ${data.text}`, 'message');
+                }
+            });
+
+            socket.addEventListener('close', (event) => {
+                status.textContent = event.reason || 'Disconnected from chat.';
+                messageInput.disabled = true;
+                sendButton.disabled = true;
+                joinForm.hidden = false;
+            });
+
+            socket.addEventListener('error', () => {
+                status.textContent = 'Could not connect. Check that the server is running, then try again.';
+            });
+        });
+
+        messageForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const text = messageInput.value.trim();
+            if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
+            socket.send(text);
+            messageInput.value = '';
+            messageInput.focus();
+        });
+    </script>
+</body>
+</html>
