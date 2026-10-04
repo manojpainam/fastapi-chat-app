@@ -12,6 +12,7 @@ class ChatRooms:
 
     def __init__(self):
         self.rooms: dict[str, dict[WebSocket, str]] = defaultdict(dict)
+        self.typing: dict[str, set[str]] = defaultdict(set)
 
     async def join(self, websocket: WebSocket, room: str, username: str):
         await websocket.accept()
@@ -20,9 +21,25 @@ class ChatRooms:
 
     def leave(self, websocket: WebSocket, room: str) -> str | None:
         username = self.rooms.get(room, {}).pop(websocket, None)
+        if username:
+            self.typing.get(room, set()).discard(username)
         if room in self.rooms and not self.rooms[room]:
             del self.rooms[room]
+            self.typing.pop(room, None)
         return username
+
+    async def set_typing(self, room: str, username: str, is_typing: bool):
+        typing_users = self.typing[room]
+        if is_typing:
+            typing_users.add(username)
+        else:
+            typing_users.discard(username)
+        if not typing_users:
+            self.typing.pop(room, None)
+        await self.broadcast(
+            room,
+            {"type": "typing", "usernames": sorted(self.typing.get(room, set()))},
+        )
 
     async def broadcast(self, room: str, message: dict):
         # Copy the keys because disconnected sockets may be removed as we iterate.
@@ -61,8 +78,19 @@ async def chat(websocket: WebSocket, room: str, username: str):
     await chat_rooms.join(websocket, room, username)
     try:
         while True:
-            text = (await websocket.receive_text()).strip()
+            payload = await websocket.receive_json()
+            if not isinstance(payload, dict):
+                continue
+
+            if payload.get("type") == "typing":
+                await chat_rooms.set_typing(room, username, bool(payload.get("is_typing")))
+                continue
+
+            if payload.get("type") != "message":
+                continue
+            text = str(payload.get("text", "")).strip()
             if text:
+                await chat_rooms.set_typing(room, username, False)
                 await chat_rooms.broadcast(
                     room,
                     {"type": "message", "username": username, "text": text[:1000]},
