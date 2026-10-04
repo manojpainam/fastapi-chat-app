@@ -35,6 +35,10 @@ class ChatRooms:
 
 chat_rooms = ChatRooms()
 
+@app.get("/health")
+def health_check():
+    return "OK"
+
 
 @app.get("/")
 def read_index(request: Request):
