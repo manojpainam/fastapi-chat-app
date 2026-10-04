@@ -18,7 +18,6 @@
         .message { margin: .35rem 0; overflow-wrap: anywhere; }
         .system { color: #777; font-style: italic; }
         #message-input { flex: 1; }
-        #typing-status { min-height: 1.5em; }
         @media (max-width: 520px) { .join-fields { flex-direction: column; } }
     </style>
 </head>
@@ -37,7 +36,6 @@
     <section id="chat" aria-live="polite">
         <p id="status" class="muted">Connecting…</p>
         <div id="messages" aria-label="Chat messages"></div>
-        <p id="typing-status" class="muted" aria-live="polite"></p>
         <form id="message-form">
             <input id="message-input" maxlength="1000" placeholder="Write a message…" autocomplete="off" disabled required>
             <button id="send-button" type="submit" disabled>Send</button>
@@ -48,31 +46,11 @@
         const joinForm = document.getElementById('join-form');
         const chat = document.getElementById('chat');
         const status = document.getElementById('status');
-        const typingStatus = document.getElementById('typing-status');
         const messages = document.getElementById('messages');
         const messageForm = document.getElementById('message-form');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
         let socket;
-        let typingTimer;
-        let isTyping = false;
-
-        function setTyping(nextIsTyping) {
-            if (isTyping === nextIsTyping || !socket || socket.readyState !== WebSocket.OPEN) return;
-            isTyping = nextIsTyping;
-            socket.send(JSON.stringify({ type: 'typing...', is_typing: isTyping }));
-        }
-
-        function showTypingUsers(usernames) {
-            const others = usernames.filter((name) => name !== document.getElementById('username').value.trim());
-            if (others.length === 1) {
-                typingStatus.textContent = `${others[0]} is typing…`;
-            } else if (others.length > 1) {
-                typingStatus.textContent = `${others.join(', ')} are typing…`;
-            } else {
-                typingStatus.textContent = '';
-            }
-        }
 
         function addMessage(text, kind = 'message') {
             const line = document.createElement('div');
@@ -111,8 +89,6 @@
                     addMessage(data.text, 'message system');
                 } else if (data.type === 'message') {
                     addMessage(`${data.username}: ${data.text}`, 'message');
-                } else if (data.type === 'typing') {
-                    showTypingUsers(Array.isArray(data.usernames) ? data.usernames : []);
                 }
             });
 
@@ -132,20 +108,9 @@
             event.preventDefault();
             const text = messageInput.value.trim();
             if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
-            clearTimeout(typingTimer);
-            setTyping(false);
-            socket.send(JSON.stringify({ type: 'message', text }));
+            socket.send(text);
             messageInput.value = '';
             messageInput.focus();
-        });
-
-        messageInput.addEventListener('input', () => {
-            const hasText = messageInput.value.trim().length > 0;
-            setTyping(hasText);
-            clearTimeout(typingTimer);
-            if (hasText) {
-                typingTimer = setTimeout(() => setTyping(false), 1500);
-            }
         });
     </script>
 </body>
